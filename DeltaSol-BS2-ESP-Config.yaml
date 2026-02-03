@@ -1,0 +1,185 @@
+# Resol VBus – DeltaSol BS/2 (source 0x4278)
+# ESPHome native VBUS platform; packet filtered by dest/source/command, sensors decode frame payload.
+
+esphome:
+  name: resol_vbus
+  friendly_name: Resol VBus Boiler
+
+esp32:
+  board: esp32dev
+
+wifi:
+  ssid: "YOUR_SSID"
+  password: "YOUR_PASS"
+
+logger:
+  level: DEBUG
+  baud_rate: 0
+
+# API: for Home Assistant / dashboard. Add encryption key if you use one, e.g.:
+#   encryption:
+#     key: "your-api-encryption-key"
+api:
+
+# OTA: add a password so only you can flash over the air, e.g.:
+#   password: "your-ota-password"
+ota:
+
+# UART for VBUS (9600 8N1, RX only; level shift required ~8 V → 3.3 V)
+uart:
+  id: vbus_uart
+  rx_pin: GPIO16
+  baud_rate: 9600
+  data_bits: 8
+  parity: NONE
+  stop_bits: 1
+
+# Native VBUS component – filters packets by dest/source/command
+vbus:
+  uart_id: vbus_uart
+
+# DeltaSol BS/2 payload: 16-bit signed LE /10 for temps, 8-bit for pump/status, 16-bit LE for hours, heat quantity at 20–21 * 1e6 Wh.
+
+sensor:
+  - platform: vbus
+    model: custom
+    dest: 0x10
+    source: 0x4278
+    command: 0x100
+    sensors:
+      # Temperatures: 16-bit signed little-endian, value/10 → °C (offsets 0–1, 2–3, 4–5, 6–7)
+      - id: temperature_1
+        name: "Temperature Sensor 1"
+        device_class: temperature
+        state_class: measurement
+        unit_of_measurement: "°C"
+        accuracy_decimals: 1
+        lambda: |-
+          int32_t r = (x[1]<<8)|x[0]; if(r&0x8000) r-=0x10000;
+          return r/10.0f;
+
+      - id: temperature_2
+        name: "Temperature Sensor 2"
+        device_class: temperature
+        state_class: measurement
+        unit_of_measurement: "°C"
+        accuracy_decimals: 1
+        lambda: |-
+          int32_t r = (x[3]<<8)|x[2]; if(r&0x8000) r-=0x10000;
+          return r/10.0f;
+
+      - id: temperature_3
+        name: "Temperature Sensor 3"
+        device_class: temperature
+        state_class: measurement
+        unit_of_measurement: "°C"
+        accuracy_decimals: 1
+        lambda: |-
+          int32_t r = (x[5]<<8)|x[4]; if(r&0x8000) r-=0x10000;
+          return r/10.0f;
+
+      - id: temperature_4
+        name: "Temperature Sensor 4"
+        device_class: temperature
+        state_class: measurement
+        unit_of_measurement: "°C"
+        accuracy_decimals: 1
+        lambda: |-
+          int32_t r = (x[7]<<8)|x[6]; if(r&0x8000) r-=0x10000;
+          return r/10.0f;
+
+      # Pump speeds: 8-bit unsigned, 0–100 % (offsets 8, 9)
+      - id: pump_speed_1
+        name: "Pump Speed Relay 1"
+        state_class: measurement
+        unit_of_measurement: "%"
+        accuracy_decimals: 0
+        lambda: "return (float)x[8];"
+
+      - id: pump_speed_2
+        name: "Pump Speed Relay 2"
+        state_class: measurement
+        unit_of_measurement: "%"
+        accuracy_decimals: 0
+        lambda: "return (float)x[9];"
+
+      # Operating hours: 16-bit unsigned LE (offsets 12–13, 14–15)
+      - id: operating_hours_1
+        name: "Operating Hours Relay 1"
+        state_class: total_increasing
+        unit_of_measurement: "h"
+        accuracy_decimals: 0
+        entity_category: diagnostic
+        lambda: "return (float)((x[13]<<8)|x[12]);"
+
+      - id: operating_hours_2
+        name: "Operating Hours Relay 2"
+        state_class: total_increasing
+        unit_of_measurement: "h"
+        accuracy_decimals: 0
+        entity_category: diagnostic
+        lambda: "return (float)((x[15]<<8)|x[14]);"
+
+      # Heat quantity: 16-bit value at bytes 20–21 (LE) × 1e6 = Wh (e.g. 255 → 255000000 Wh)
+      - id: heat_quantity
+        name: "Heat Quantity"
+        state_class: total_increasing
+        unit_of_measurement: "Wh"
+        accuracy_decimals: 0
+        lambda: |-
+          uint32_t low = (x[21]<<8)|x[20];
+          return (float)low * 1000000.0f;
+
+      # Status and programme: 8-bit (offsets 22, 23)
+      - id: status
+        name: "Status"
+        accuracy_decimals: 0
+        entity_category: diagnostic
+        lambda: "return (float)x[22];"
+
+      - id: programme
+        name: "Programme"
+        accuracy_decimals: 0
+        entity_category: diagnostic
+        lambda: "return (float)x[23];"
+
+      # Firmware version: 16-bit LE / 100 (offsets 24–25)
+      - id: version
+        name: "Device Firmware Version"
+        accuracy_decimals: 2
+        entity_category: diagnostic
+        lambda: "return ((x[25]<<8)|x[24])/100.0f;"
+
+binary_sensor:
+  - platform: vbus
+    model: custom
+    dest: 0x10
+    source: 0x4278
+    command: 0x100
+    binary_sensors:
+      # Offset 10: status bits (sensor defects, emergency flags)
+      - id: sensor_1_defective
+        name: "Sensor 1 Defective"
+        lambda: "return (x[10] & 0x01) != 0;"
+      - id: sensor_2_defective
+        name: "Sensor 2 Defective"
+        lambda: "return (x[10] & 0x02) != 0;"
+      - id: sensor_3_defective
+        name: "Sensor 3 Defective"
+        lambda: "return (x[10] & 0x04) != 0;"
+      - id: sensor_4_defective
+        name: "Sensor 4 Defective"
+        lambda: "return (x[10] & 0x08) != 0;"
+      - id: emergency_store_temp
+        name: "Emergency Store Temp"
+        lambda: "return (x[10] & 0x10) != 0;"
+      - id: collector_emergency_temp
+        name: "Collector Emergency Temp"
+        lambda: "return (x[10] & 0x20) != 0;"
+      # Offset 11: manual mode flags for relays
+      - id: r1_manual_mode
+        name: "Relay 1 Manual Mode"
+        lambda: "return (x[11] & 0x01) != 0;"
+      - id: r2_manual_mode
+        name: "Relay 2 Manual Mode"
+        lambda: "return (x[11] & 0x02) != 0;"

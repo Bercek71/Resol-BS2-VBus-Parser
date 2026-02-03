@@ -1,0 +1,18 @@
+# Home Assistant: MQTT sensors for VBUS temperatures (published by vbus-bridge).
+# Add this to configuration.yaml under mqtt: sensor: (or use MQTT discovery).
+# Topics vita/collector_temperature and vita/boiler_temperature are published by the Docker vbus-bridge.
+
+mqtt:
+  sensor:
+    - name: "VBUS Collector Temperature"
+      state_topic: "vita/collector_temperature"
+      device_class: temperature
+      state_class: measurement
+      unit_of_measurement: "°C"
+      unique_id: vbus_collector_temperature
+    - name: "VBUS Boiler Temperature"
+      state_topic: "vita/boiler_temperature"
+      device_class: temperature
+      state_class: measurement
+      unit_of_measurement: "°C"
+      unique_id: vbus_boiler_temperature
